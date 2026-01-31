@@ -1,0 +1,45 @@
+# Virtual env — Docker builds its own; do not copy host .venv (breaks /app/.venv/bin/uvicorn)
+.venv
+venv
+venv/
+*.venv
+
+# Git and IDE
+.git
+.gitignore
+.dockerignore
+.cursor
+.idea
+.vscode
+*.swp
+*.swo
+
+# Python cache and build
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache
+.mypy_cache
+.coverage
+htmlcov
+dist
+build
+*.egg-info
+*.egg
+
+# Env files — loaded at runtime via env_file / entrypoint
+.env
+.env.*
+!.env.example
+
+# Docker
+docker/docker-compose*.yml
+Dockerfile*
+*.log
+logs/
+
+# Docs and misc
+README.md
+*.md
+.docker

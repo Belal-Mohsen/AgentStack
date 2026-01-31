@@ -31,7 +31,7 @@ def configure_logging(level: Optional[str | int] = None, fmt: Optional[str] = No
 
     shared_processors = [
         structlog.processors.add_log_level,
-        structlog.processors.add_logger_name,
+        structlog.stdlib.add_logger_name,
         timestamper,
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,

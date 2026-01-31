@@ -1,4 +1,4 @@
-version: '3.8'
+# version: '3.8'
 
 # ==================================================
 # Docker Compose Configuration
@@ -12,12 +12,14 @@ services:
   # ==================================================
   db:
     image: pgvector/pgvector:pg16   # PostgreSQL 16 with pgvector extension enabled
+    env_file:
+      - .env.${APP_ENV:-development}
     environment:
       - POSTGRES_DB=${POSTGRES_DB}          # Database name
       - POSTGRES_USER=${POSTGRES_USER}      # Database user
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}  # Database password
     ports:
-      - "5432:5432"                # Expose PostgreSQL to host (dev use only)
+      - "${POSTGRES_PORT:-5433}:5432"  # Host:container — use 5433 if 5432 is taken by local Postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data  # Persistent database storage
     healthcheck:
@@ -34,13 +36,14 @@ services:
   # ==================================================
   app:
     build:
-      context: .                     # Build image from project root
+      context: ..
+      dockerfile: docker/app/Dockerfile
       args:
         APP_ENV: ${APP_ENV:-development}  # Build-time environment
     ports:
       - "8000:8000"                # Expose FastAPI service
     volumes:
-      - ./app:/app/app               # Hot-reload application code
+      - ../app:/app/app              # Project app package (main.py, core/, etc.)
       - ./logs:/app/logs             # Persist application logs
     env_file:
       - .env.${APP_ENV:-development} # Load environment-specific variables
@@ -66,6 +69,8 @@ services:
   # ==================================================
   prometheus:
     image: prom/prometheus:latest
+    env_file:
+      - .env.${APP_ENV:-development}
     ports:
       - "9090:9090"                 # Prometheus UI
     volumes:
@@ -81,6 +86,8 @@ services:
   # ==================================================
   grafana:
     image: grafana/grafana:latest
+    env_file:
+      - .env.${APP_ENV:-development}
     ports:
       - "3000:3000"                 # Grafana UI
     volumes:
@@ -99,6 +106,8 @@ services:
   # ==================================================
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
+    env_file:
+      - .env.${APP_ENV:-development}
     ports:
       - "8080:8080"                 # cAdvisor UI
     volumes:
