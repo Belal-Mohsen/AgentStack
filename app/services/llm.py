@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
@@ -28,13 +28,12 @@ class LLMRegistry:
     # We pre-configure models with different capabilities/costs
     LLMS: List[Dict[str, Any]] = [
         {
-            "name": "gpt-5-mini", # Hypothetical or specific model alias
+            "name": "gpt-4o-mini",  # Default: cost-effective, fast
             "llm": ChatOpenAI(
-                model="gpt-5-mini",
+                model="gpt-4o-mini",
+                temperature=settings.DEFAULT_LLM_TEMPERATURE,
                 api_key=settings.OPENAI_API_KEY,
                 max_tokens=settings.MAX_TOKENS,
-                # New "reasoning" feature in newer models
-                reasoning={"effort": "low"}, 
             ),
         },
         {
@@ -44,14 +43,6 @@ class LLMRegistry:
                 temperature=settings.DEFAULT_LLM_TEMPERATURE,
                 api_key=settings.OPENAI_API_KEY,
                 max_tokens=settings.MAX_TOKENS,
-            ),
-        },
-        {
-            "name": "gpt-4o-mini", # Cheaper fallback
-            "llm": ChatOpenAI(
-                model="gpt-4o-mini",
-                temperature=settings.DEFAULT_LLM_TEMPERATURE,
-                api_key=settings.OPENAI_API_KEY,
             ),
         },
     ]
@@ -132,13 +123,17 @@ class LLMService:
         reraise=True,
     )
 
-    async def _call_with_retry(self, messages: List[BaseMessage]) -> BaseMessage:
+    async def _call_with_retry(
+        self, messages: Union[List[BaseMessage], List[dict]]
+    ) -> BaseMessage:
         """Internal method that executes the actual API call."""
         if not self._llm:
             raise RuntimeError("LLM not initialized")
         return await self._llm.ainvoke(messages)
 
-    async def call(self, messages: List[BaseMessage]) -> BaseMessage:
+    async def call(
+        self, messages: Union[List[BaseMessage], List[dict]]
+    ) -> BaseMessage:
         """
         Public interface. Wraps the retry logic with a Fallback loop.
         If 'gpt-4o' fails 3 times, we switch to 'gpt-4o-mini' and try again.

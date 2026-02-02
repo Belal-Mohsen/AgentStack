@@ -132,6 +132,7 @@ class Settings:
         self.API_V1_STR = os.getenv("API_V1_STR", "/api/v1")
         self.DEBUG = os.getenv("DEBUG", "false").lower() in (
             "true", "1", "t", "yes")
+        self.LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
 
         # Parse CORS origins using our helper
         self.ALLOWED_ORIGINS = parse_list_from_env("ALLOWED_ORIGINS", ["*"])
@@ -194,10 +195,17 @@ class Settings:
         self.RATE_LIMIT_ENDPOINTS = {
             "chat": parse_list_from_env("RATE_LIMIT_CHAT", ["30 per minute"]),
             "chat_stream": parse_list_from_env("RATE_LIMIT_CHAT_STREAM", ["20 per minute"]),
+            "messages": parse_list_from_env("RATE_LIMIT_MESSAGES", ["200 per minute"]),
             "auth": parse_list_from_env("RATE_LIMIT_LOGIN", ["20 per minute"]),
+            "login": parse_list_from_env("RATE_LIMIT_LOGIN", ["20 per minute"]),
+            "register": parse_list_from_env("RATE_LIMIT_LOGIN", ["20 per minute"]),
             "root": parse_list_from_env("RATE_LIMIT_ROOT", ["10 per minute"]),
             "health": parse_list_from_env("RATE_LIMIT_HEALTH", ["20 per minute"]),
         }
+
+        # Defaults for logging (overridden per environment below)
+        self.LOG_LEVEL = "INFO"
+        self.LOG_FORMAT = "json"
 
         # Apply logic to override settings based on environment
         self.apply_environment_settings()
@@ -213,6 +221,16 @@ class Settings:
             self.LOG_FORMAT = "console"
             # Relax rate limits for local development
             self.RATE_LIMIT_DEFAULT = ["1000 per day", "200 per hour"]
+
+        elif self.ENVIRONMENT == Environment.STAGING:
+            self.DEBUG = False
+            self.LOG_LEVEL = "INFO"
+            self.LOG_FORMAT = "json"
+
+        elif self.ENVIRONMENT == Environment.TEST:
+            self.DEBUG = True
+            self.LOG_LEVEL = "DEBUG"
+            self.LOG_FORMAT = "console"
 
         elif self.ENVIRONMENT == Environment.PRODUCTION:
             self.DEBUG = False

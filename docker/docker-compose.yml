@@ -19,7 +19,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}      # Database user
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}  # Database password
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"  # Host:container — use 5433 if 5432 is taken by local Postgres
+      - "${POSTGRES_PORT:-5432}:5432"  # Host:container — use 5433 if 5432 is taken by local Postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data  # Persistent database storage
     healthcheck:
@@ -50,6 +50,8 @@ services:
     environment:
       - APP_ENV=${APP_ENV:-development}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-supersecretkeythatshouldbechangedforproduction}
+      # Container-to-container: db listens on 5432;
+      - POSTGRES_PORT=5432
     depends_on:
       db:
         condition: service_healthy   # Wait until DB is ready
@@ -92,8 +94,8 @@ services:
       - "3000:3000"                 # Grafana UI
     volumes:
       - grafana-storage:/var/lib/grafana
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
       - ./grafana/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./grafana/json:/etc/grafana/provisioning/dashboards/json
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false

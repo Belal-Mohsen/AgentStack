@@ -35,9 +35,14 @@ def prepare_messages(messages: list[Message], llm: BaseChatModel, system_prompt:
         )
     except Exception as e:
         # Fallback if token counting fails (rare, but safety first)
-        trimmed_messages = messages
+        trimmed_messages = [m if isinstance(m, dict) else m.model_dump() for m in messages]
+    # trimmed_messages is list[dict]; convert to Message for consistent return type
+    trimmed_as_messages = [
+        Message(role=m.get("role", "user"), content=str(m.get("content", "")))
+        for m in trimmed_messages
+    ]
     # Always prepend the system prompt to enforce agent behavior
-    return [Message(role="system", content=system_prompt)] + trimmed_messages
+    return [Message(role="system", content=system_prompt)] + trimmed_as_messages
 
 def process_llm_response(response: BaseMessage) -> BaseMessage:
     """

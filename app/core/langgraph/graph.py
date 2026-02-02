@@ -4,6 +4,7 @@ from urllib.parse import quote_plus
 from asgiref.sync import sync_to_async
 
 from langchain_core.messages import ToolMessage, convert_to_openai_messages
+from langchain_core.messages import trim_messages as _trim_messages
 from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, StateGraph
@@ -17,9 +18,10 @@ from app.core.config import Environment, settings
 from app.core.langgraph.tools import tools
 from app.core.config.logging import get_logger
 from app.core.prompts import load_system_prompt
+from app.core.config import settings as app_settings
 from app.schemas import GraphState, Message
 from app.services.llm import llm_service
-from app.utils import dump_messages, prepare_messages, process_llm_response
+from app.utils import dump_messages, process_llm_response
 
 
 logger = get_logger(__name__)
@@ -97,18 +99,31 @@ class LangGraphAgent:
         """
         The main Chat Node.
         1. Loads system prompt with memory context.
-        2. Prepares messages (trimming if needed).
+        2. Prepares messages (trimming if needed). state.messages are LangChain messages.
         3. Calls LLM Service.
         """
         # Load system prompt with the Long-Term Memory retrieved from previous steps
         SYSTEM_PROMPT = load_system_prompt(long_term_memory=state.long_term_memory)
         
-        # Prepare context window (trimming)
+        # Convert graph state (LangChain messages) to OpenAI-format dicts, trim, prepend system
         current_llm = self.llm_service.get_llm()
-        messages = prepare_messages(state.messages, current_llm, SYSTEM_PROMPT)
+        openai_msgs = convert_to_openai_messages(state.messages)
+        try:
+            trimmed = _trim_messages(
+                openai_msgs,
+                strategy="last",
+                token_counter=current_llm,
+                max_tokens=app_settings.MAX_TOKENS,
+                start_on="human",
+                include_system=False,
+                allow_partial=False,
+            )
+        except Exception:
+            trimmed = openai_msgs
+        full_msgs = [{"role": "system", "content": SYSTEM_PROMPT}] + list(trimmed)
         try:
             # Invoke LLM (with retries handled by service)
-            response_message = await self.llm_service.call(dump_messages(messages))
+            response_message = await self.llm_service.call(full_msgs)
             response_message = process_llm_response(response_message)
             # Determine routing: If LLM wants to use a tool, go to 'tool_call', else END.
             if response_message.tool_calls:
@@ -205,6 +220,57 @@ class LangGraphAgent:
             self._update_long_term_memory(user_id, final_state["messages"])
         )
         return self._process_messages(final_state["messages"])
+
+    async def get_stream_response(
+        self, messages: list[Message], session_id: str, user_id: str
+    ) -> AsyncGenerator[str, None]:
+        """
+        Stream the agent response token-by-token via LangGraph messages mode.
+        """
+        if self._graph is None:
+            await self.create_graph()
+        memory_client = await self._long_term_memory()
+        relevant_memory = await memory_client.search(
+            user_id=user_id, query=messages[-1].content
+        )
+        memory_context = "\n".join(
+            [f"* {res['memory']}" for res in relevant_memory.get("results", [])]
+        )
+        config = {
+            "configurable": {"thread_id": session_id},
+            "callbacks": [CallbackHandler()],
+        }
+        input_state = {
+            "messages": dump_messages(messages),
+            "long_term_memory": memory_context or "No relevant memory found.",
+        }
+        async for msg_chunk, _ in self._graph.astream(
+            input_state, config=config, stream_mode="messages"
+        ):
+            if getattr(msg_chunk, "content", None):
+                yield msg_chunk.content
+
+    async def get_chat_history(self, session_id: str) -> list[Message]:
+        """
+        Load conversation history for the session from the checkpointer.
+        """
+        if self._graph is None:
+            await self.create_graph()
+        config = {"configurable": {"thread_id": session_id}}
+        state = await self._graph.aget_state(config)
+        if state is None or not state.values or "messages" not in state.values:
+            return []
+        return self._process_messages(state.values["messages"])
+
+    async def clear_chat_history(self, session_id: str) -> None:
+        """
+        Clear conversation history for the thread (reset state).
+        """
+        if self._graph is None:
+            await self.create_graph()
+        config = {"configurable": {"thread_id": session_id}}
+        await self._graph.aupdate_state(config, {"messages": []})
+
     async def _update_long_term_memory(self, user_id: str, messages: list) -> None:
         """Extracts and saves new facts from the conversation to pgvector."""
         try:
