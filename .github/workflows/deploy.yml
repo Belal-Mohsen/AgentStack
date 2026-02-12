@@ -45,7 +45,7 @@ jobs:
         with:
           context: .
           load: true # Loads the image into the local Docker daemon instead of pushing
-          tags: ${{ secrets.DOCKER_USERNAME }}/AgentStack:scan-tmp
+          tags: ${{ secrets.DOCKER_USERNAME }}/agentstack:scan-tmp
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -53,7 +53,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ secrets.DOCKER_USERNAME }}/AgentStack:scan-tmp'
+          image-ref: '${{ secrets.DOCKER_USERNAME }}/agentstack:scan-tmp'
           format: 'table'
           exit-code: '1' # This crashes the pipeline if "CRITICAL" issues are found
           ignore-unfixed: true
