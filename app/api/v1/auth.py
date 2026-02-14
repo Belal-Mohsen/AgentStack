@@ -32,6 +32,7 @@ from app.utils.sanitization import (
 )
 router = APIRouter()
 security = HTTPBearer()
+db_service = DatabaseService()
 
 
 
@@ -122,7 +123,7 @@ async def register_user(request: Request, user_data: UserCreate):
         # or hash it here if the service expects a hash. 
         # Based on our service implementation earlier, let's hash it here:
         hashed = User.hash_password(password)
-        user = await database_service.create_user(email=sanitized_email, password_hash=hashed)
+        user = await database_service.create_user(email=sanitized_email, password=hashed)
         # 4. Auto-login (Mint token)
         token = create_access_token(str(user.id))
         return UserResponse(id=user.id, email=user.email, token=token)
@@ -146,6 +147,7 @@ async def login(
         # Sanitize
         username = sanitize_string(username)
         password = sanitize_string(password)
+        grant_type = sanitize_string(grant_type)
 
         if grant_type != "password":
             raise HTTPException(status_code=400, detail="Unsupported grant type")
@@ -196,15 +198,74 @@ async def get_user_sessions(user: User = Depends(get_current_user)):
     """
     Retrieve all historical chat sessions for the user.
     """
-    sessions = await database_service.get_user_sessions(user.id)
-    return [
-        SessionResponse(
-            session_id=s.id,
-            name=s.name,
-            # We re-issue tokens so the UI can resume these chats
-            token=create_access_token(s.id) 
-        )
-        for s in sessions
-    ]
+    try:
+        sessions = await db_service.get_user_sessions(user.id)
+        return [
+            SessionResponse(
+                session_id=sanitize_string(session.id),
+                name=sanitize_string(session.name),
+                token=create_access_token(session.id),
+            )
+            for session in sessions
+        ]
+    except ValueError as ve:
+        logger.error("get_sessions_validation_failed", user_id=user.id, error=str(ve), exc_info=True)
+        raise HTTPException(status_code=422, detail=str(ve))
+
+@router.patch("/session/{session_id}/name", response_model=SessionResponse)
+async def update_session_name(
+    session_id: str, name: str = Form(...), current_session: Session = Depends(get_current_session)
+):
+    """Update a session's name.
+
+    Args:
+        session_id: The ID of the session to update
+        name: The new name for the session
+        current_session: The current session from auth
+
+    Returns:
+        SessionResponse: The updated session information
+    """
+    try:
+        # Sanitize inputs
+        sanitized_session_id = sanitize_string(session_id)
+        sanitized_name = sanitize_string(name)
+        sanitized_current_session = sanitize_string(current_session.id)
+
+        # Verify the session ID matches the authenticated session
+        if sanitized_session_id != sanitized_current_session:
+            raise HTTPException(status_code=403, detail="Cannot modify other sessions")
+
+        # Update the session name
+        session = await db_service.update_session_name(sanitized_session_id, sanitized_name)
+
+        # Create a new token (not strictly necessary but maintains consistency)
+        token = create_access_token(sanitized_session_id)
+
+        return SessionResponse(session_id=sanitized_session_id, name=session.name, token=token)
+    except ValueError as ve:
+        logger.error("session_update_validation_failed", error=str(ve), session_id=session_id, exc_info=True)
+        raise HTTPException(status_code=422, detail=str(ve))
+
+
+@router.delete("/session/{session_id}")
+async def delete_session(session_id: str, current_session: Session = Depends(get_current_session)):
+    """Delete a session for the authenticated user"""
+    try:
+        # Sanitize inputs
+        sanitized_session_id = sanitize_string(session_id)
+        sanitized_current_session = sanitize_string(current_session.id)
+
+        # Verify the session ID matches the authenticated session
+        if sanitized_session_id != sanitized_current_session:
+            raise HTTPException(status_code=403, detail="Cannot delete other sessions")
+
+        # Delete the session
+        await db_service.delete_session(sanitized_session_id)
+
+        logger.info("session_deleted", session_id=session_id, user_id=current_session.user_id)
+    except ValueError as ve:
+        logger.error("session_deletion_validation_failed", error=str(ve), session_id=session_id, exc_info=True)
+        raise HTTPException(status_code=422, detail=str(ve))
 
 

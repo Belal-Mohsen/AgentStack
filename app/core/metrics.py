@@ -1,6 +1,6 @@
 from prometheus_client import Counter, Histogram, Gauge
 from starlette_prometheus import metrics, PrometheusMiddleware
-
+# Telemetry Context
 # ==================================================
 # Prometheus Metrics Definition
 # ==================================================
@@ -43,6 +43,9 @@ llm_stream_duration_seconds = Histogram(
     ["model"],
     buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 60.0]
 )
+
+
+orders_processed = Counter("orders_processed_total", "Total number of orders processed")
 def setup_metrics(app):
     """
     Configures the Prometheus middleware and exposes the /metrics endpoint.

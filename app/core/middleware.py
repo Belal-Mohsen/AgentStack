@@ -10,6 +10,7 @@ from app.core.config.logging import bind_context, clear_context
 from app.core.metrics import (
     http_request_duration_seconds,
     http_requests_total,
+    db_connections,
 )
 # ==================================================
 # Metrics Middleware

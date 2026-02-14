@@ -84,32 +84,38 @@ async def chat_stream(
             Internal generator that yields SSE formatted chunks.
             """
             try:
-                # We wrap execution in a metrics timer to track latency in Prometheus
-                # model = agent.llm_service.get_llm().get_name() # Get model name for metrics
-                
-                # Note: agent.get_stream_response() is an async generator we implemented in graph.py
-                async for chunk in agent.get_stream_response(
-                    chat_request.messages, 
-                    session_id=session.id, 
-                    user_id=str(session.user_id)
-                ):
-                    # Wrap the raw text chunk in a structured JSON schema
-                    response = StreamResponse(content=chunk, done=False)
-                    
-                    # Format as SSE
-                    yield f"data: {json.dumps(response.model_dump())}\n\n"
-                # Send a final 'done' signal so the client knows to stop listening
+                full_response = ""
+                with llm_stream_duration_seconds.labels(model=agent.llm_service.get_llm().get_name()).time():
+                    async for chunk in agent.get_stream_response(
+                        chat_request.messages, session.id, user_id=session.user_id
+                    ):
+                        full_response += chunk
+                        response = StreamResponse(content=chunk, done=False)
+                        yield f"data: {json.dumps(response.model_dump())}\n\n"
+
+                # Send final message indicating completion
                 final_response = StreamResponse(content="", done=True)
                 yield f"data: {json.dumps(final_response.model_dump())}\n\n"
+
             except Exception as e:
-                # If the stream crashes mid-way, we must send the error to the client
-                logger.error("stream_crash", session_id=session.id, error=str(e))
-                error_response = StreamResponse(content=f"Error: {str(e)}", done=True)
+                logger.error(
+                    "stream_chat_request_failed",
+                    session_id=session.id,
+                    error=str(e),
+                    exc_info=True,
+                )
+                error_response = StreamResponse(content=str(e), done=True)
                 yield f"data: {json.dumps(error_response.model_dump())}\n\n"
-        # Return the generator wrapped in StreamingResponse
+
         return StreamingResponse(event_generator(), media_type="text/event-stream")
+
     except Exception as e:
-        logger.error("stream_request_failed", session_id=session.id, error=str(e))
+        logger.error(
+            "stream_chat_request_failed",
+            session_id=session.id,
+            error=str(e),
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/messages", response_model=ChatResponse)

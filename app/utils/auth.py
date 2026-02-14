@@ -44,14 +44,21 @@ def verify_token(token: str) -> Optional[str]:
     """
     Decodes and verifies a JWT token. Returns the subject (User ID) if valid.
     """
+    # Basic format validation before attempting decode
+    # JWT tokens consist of 3 base64url-encoded segments separated by dots
+    if not re.match(r"^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$", token):
+        logger.warning("token_suspicious_format")
+        raise ValueError("Token format is invalid - expected JWT format")
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        subject: str = payload.get("sub")
-        
-        if subject is None:
+        thread_id: str = payload.get("sub")
+        if thread_id is None:
+            logger.warning("token_missing_thread_id")
             return None
-            
-        return subject
+
+        logger.info("token_verified", thread_id=thread_id)
+        return thread_id
+
     except JWTError as e:
-        # If the signature is invalid or token is expired, jose raises JWTError
+        logger.error("token_verification_failed", error=str(e))
         return None

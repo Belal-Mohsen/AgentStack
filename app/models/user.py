@@ -46,3 +46,6 @@ class User(BaseModel, table=True):
         """
         salt = bcrypt.gensalt()
         return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+
+
+from app.models.session import Session
